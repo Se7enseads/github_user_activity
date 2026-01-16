@@ -1,6 +1,7 @@
 # Github User Activity
 
 This Rust project fetches and displays the recent activity of a specified GitHub user. It utilizes the GitHub API to retrieve information about the user's events.
+From [Roadmap.sh](https://roadmap.sh/projects/github-user-activity)
 
 ```text
 https://api.github.com/users/{username}/events
