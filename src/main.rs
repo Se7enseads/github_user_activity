@@ -15,6 +15,11 @@ struct Payload {
 }
 
 #[derive(serde::Deserialize, Debug)]
+struct CompareResponse {
+    total_commits: usize,
+}
+
+#[derive(serde::Deserialize, Debug)]
 struct Repo {
     name: String,
 }
@@ -56,6 +61,23 @@ fn display_user_activity(events: &Vec<Event>) {
             EventType::ForkEvent => {
                 println!("Forked {}", event.repo.name);
             }
+            EventType::PushEvent => {
+                // Try to get commit count from the compare API
+                let commit_count = if let (Some(before), Some(head)) =
+                    (&event.payload.before, &event.payload.head)
+                {
+                    fetch_commit_count(&event.repo.name, before, head).unwrap_or(0)
+                } else {
+                    0
+                };
+
+                if commit_count > 0 {
+                    println!("Pushed {} commit(s) to {}", commit_count, event.repo.name);
+                } else {
+                    println!("Pushed to {}", event.repo.name);
+                }
+                println!("Pushed to {}", event.repo.name);
+            }
             EventType::WatchEvent => {
                 println!("Starred {}", event.repo.name);
             }
@@ -93,6 +115,32 @@ fn display_user_activity(events: &Vec<Event>) {
     }
 }
 
+fn fetch_commit_count(repo: &str, before: &str, head: &str) -> Result<usize, String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/compare/{}...{}",
+        repo, before, head
+    );
+
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .get(&url)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "Se7enseads")
+        .send()
+        .map_err(|e| format!("Failed to send request: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to fetch count: HTTP {}", response.status()));
+    }
+
+    let compare_response = response
+        .json::<CompareResponse>()
+        .map_err(|e| format!("Failed to read response body: {e}"))?;
+
+    Ok(compare_response.total_commits)
+}
+
 fn fetch_github_activity(username: &String) -> Result<Vec<Event>, String> {
     // Check if username is empty
     if username.is_empty() {
@@ -112,6 +160,11 @@ fn fetch_github_activity(username: &String) -> Result<Vec<Event>, String> {
         .send()
         .map_err(|e| format!("Failed to send request: {e}"))?;
 
+    let remaining_request = response.headers().get("X-RateLimit-Remaining").unwrap();
+    println!(
+        "Remaining requests: {}",
+        remaining_request.to_str().unwrap(),
+    );
 
     // Return error if response status is not success
     if !response.status().is_success() {
