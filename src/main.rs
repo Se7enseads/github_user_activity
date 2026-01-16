@@ -160,11 +160,23 @@ fn fetch_github_activity(username: &String) -> Result<Vec<Event>, String> {
         .send()
         .map_err(|e| format!("Failed to send request: {e}"))?;
 
-    let remaining_request = response.headers().get("X-RateLimit-Remaining").unwrap();
-    println!(
-        "Remaining requests: {}",
-        remaining_request.to_str().unwrap(),
-    );
+    // Handle rate limiting
+    if response.status() == reqwest::StatusCode::FORBIDDEN {
+        let time = response
+            .headers()
+            .get("X-RateLimit-Reset")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(|timestamp| {
+                let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0);
+                datetime
+                    .map(|dt| dt.format("%H:%M:%S").to_string())
+                    .unwrap_or_else(|| "unknown time".to_string())
+            })
+            .unwrap_or_else(|| "unknown time".to_string());
+        let error = format!("Rate limit exceeded. Resets at {time}");
+        return Err(error);
+    }
 
     // Return error if response status is not success
     if !response.status().is_success() {
